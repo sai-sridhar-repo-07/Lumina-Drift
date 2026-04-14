@@ -1,0 +1,638 @@
+Here is a refined, slower-paced particle animation where typed words gracefully morph from a glowing sphere, with a new click-ripple interaction and a cleaner interface.
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Lumina Drift | Particle Text Canvas</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background: #0a0c12;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Roboto', sans-serif;
+        }
+
+        canvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            cursor: none;
+            display: block;
+        }
+
+        /* UI overlay — clean glassmorphism */
+        #ui-container {
+            position: fixed;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        .input-group {
+            pointer-events: auto;
+            display: flex;
+            gap: 8px;
+            backdrop-filter: blur(12px);
+            background: rgba(18, 22, 35, 0.65);
+            padding: 5px 12px;
+            border-radius: 80px;
+            border: 1px solid rgba(140, 200, 255, 0.35);
+            box-shadow: 0 5px 18px rgba(0,0,0,0.3);
+            transition: all 0.2s;
+        }
+
+        #word-input {
+            background: rgba(8, 10, 18, 0.8);
+            border: none;
+            color: #eef4ff;
+            padding: 10px 18px;
+            border-radius: 60px;
+            font-size: 14px;
+            width: 220px;
+            outline: none;
+            font-weight: 450;
+            letter-spacing: 0.3px;
+            font-family: inherit;
+        }
+
+        #word-input::placeholder {
+            color: #8e9bc0;
+            font-weight: 400;
+            font-size: 12px;
+        }
+
+        #word-input:focus {
+            background: rgba(20, 28, 42, 0.95);
+            box-shadow: 0 0 0 2px rgba(100, 180, 250, 0.5);
+            color: #ffffff;
+        }
+
+        #status-text {
+            color: #bdd4ff;
+            font-size: 12px;
+            font-weight: 450;
+            background: rgba(0,0,0,0.35);
+            backdrop-filter: blur(6px);
+            padding: 4px 14px;
+            border-radius: 40px;
+            letter-spacing: 0.4px;
+        }
+
+        #transcript-area {
+            color: #d9eaff;
+            font-size: 18px;
+            font-weight: 500;
+            text-align: center;
+            max-width: 460px;
+            background: rgba(10, 14, 22, 0.55);
+            backdrop-filter: blur(12px);
+            padding: 6px 22px;
+            border-radius: 56px;
+            font-family: monospace;
+            border: 0.5px solid rgba(110, 170, 240, 0.4);
+            pointer-events: none;
+            white-space: nowrap;
+            overflow-x: auto;
+            max-width: 85vw;
+        }
+
+        #hint-tip {
+            color: rgba(160, 200, 255, 0.6);
+            font-size: 10px;
+            transition: opacity 0.4s;
+            background: rgba(0,0,0,0.2);
+            padding: 3px 12px;
+            border-radius: 30px;
+            backdrop-filter: blur(2px);
+            pointer-events: none;
+        }
+
+        #reset-hint {
+            position: fixed;
+            top: 18px;
+            right: 20px;
+            color: rgba(140, 180, 230, 0.55);
+            font-size: 10px;
+            background: rgba(0,0,0,0.3);
+            padding: 5px 12px;
+            border-radius: 40px;
+            backdrop-filter: blur(6px);
+            pointer-events: none;
+            font-family: monospace;
+        }
+
+        .input-group:focus-within {
+            animation: softGlow 1.2s infinite alternate;
+        }
+
+        @keyframes softGlow {
+            0% { border-color: rgba(100, 170, 255, 0.3); box-shadow: 0 0 0 0 rgba(80, 150, 255, 0.15);}
+            100% { border-color: rgba(140, 200, 255, 0.7); box-shadow: 0 0 8px 1px rgba(80, 150, 255, 0.25);}
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="luminaCanvas"></canvas>
+
+<div id="ui-container">
+    <div id="transcript-area">✦ drift & type ✦</div>
+    <div class="input-group">
+        <input type="text" id="word-input" placeholder="type a word or phrase..." maxlength="70" autocomplete="off">
+    </div>
+    <div id="status-text">sphere mode • calm drift</div>
+    <div id="hint-tip">⟡ move mouse to repel • click canvas → ripple push ⟡</div>
+</div>
+<div id="reset-hint">⚡ double-click canvas → reset sphere</div>
+
+<script>
+    (function(){
+        // ----------------------------  refined, slower animation + click ripple novelty  ----------------------------
+        const canvas = document.getElementById('luminaCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('status-text');
+        const hintDiv = document.getElementById('hint-tip');
+        const wordInput = document.getElementById('word-input');
+        const transcriptSpan = document.getElementById('transcript-area');
+        
+        let width, height, centerX, centerY, devicePixelRatio;
+        
+        // particle count: 8k for fluid performance & clarity
+        const PARTICLE_COUNT = 8800;
+        
+        // geometry arrays
+        const posX = new Float32Array(PARTICLE_COUNT);
+        const posY = new Float32Array(PARTICLE_COUNT);
+        const posZ = new Float32Array(PARTICLE_COUNT);
+        const velX = new Float32Array(PARTICLE_COUNT);
+        const velY = new Float32Array(PARTICLE_COUNT);
+        const velZ = new Float32Array(PARTICLE_COUNT);
+        const targetX = new Float32Array(PARTICLE_COUNT);
+        const targetY = new Float32Array(PARTICLE_COUNT);
+        const targetZ = new Float32Array(PARTICLE_COUNT);
+        const homeX = new Float32Array(PARTICLE_COUNT);
+        const homeY = new Float32Array(PARTICLE_COUNT);
+        const homeZ = new Float32Array(PARTICLE_COUNT);
+        const particleHue = new Float32Array(PARTICLE_COUNT);
+        const phaseOffset = new Float32Array(PARTICLE_COUNT);
+        
+        // state: 0 = sphere / 1 = morphing / 2 = text active
+        let appMode = 0;
+        let mouseX = -10000, mouseY = -10000;
+        let globalTime = 0;
+        
+        // repulsion parameters (softer)
+        const REPEL_RADIUS = 115;
+        const REPEL_FORCE = 5.6;   // reduced from 9.2 → gentler
+        
+        // physics tuning — SLOWER & SMOOTHER
+        const SPHERE_SPRING = 0.012;    // was 0.0185
+        const TEXT_SPRING = 0.015;      // was 0.021
+        const DAMPING = 0.88;           // was 0.83 → more viscous
+        const ROTATION_SPEED = 0.0042;  // was 0.0072 → calmer sphere rotation
+        const TIME_STEP = 0.0038;       // was 0.006 → global time progression slower
+        
+        // fibonacci sphere
+        const PHI_SPHERE = Math.PI * (1 + Math.sqrt(5));
+        
+        let rotAngle = 0;
+        const FOV = 540;
+        const CAM_Z_OFFSET = 600;
+        
+        // ---------- NOVELTY: click ripple forces (temporary pushes) ----------
+        let activeRipples = []; // each: {x, y, strength, life}
+        
+        function addRipple(x, y, intensity = 1.0) {
+            activeRipples.push({
+                x: x, y: y,
+                strength: 12.0 * intensity,
+                life: 0.75,      // seconds of influence
+                radius: 95
+            });
+        }
+        
+        // ---------- resize & sphere generation ----------
+        function resizeCanvas() {
+            devicePixelRatio = window.devicePixelRatio || 1;
+            width = window.innerWidth;
+            height = window.innerHeight;
+            centerX = width / 2;
+            centerY = height / 2;
+            canvas.width = width * devicePixelRatio;
+            canvas.height = height * devicePixelRatio;
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.scale(devicePixelRatio, devicePixelRatio);
+            if(appMode === 0) generateSphereHomePositions();
+        }
+        
+        function generateSphereHomePositions() {
+            const baseSize = Math.min(width, height);
+            const sphereRadius = baseSize > 1200 ? baseSize * 0.27 : baseSize * 0.43;
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const theta = Math.acos(1 - 2 * (i + 0.5) / PARTICLE_COUNT);
+                const phi = PHI_SPHERE * i;
+                const x = Math.sin(theta) * Math.cos(phi) * sphereRadius;
+                const y = Math.sin(theta) * Math.sin(phi) * sphereRadius;
+                const z = Math.cos(theta) * sphereRadius;
+                homeX[i] = x;
+                homeY[i] = y;
+                homeZ[i] = z;
+                targetX[i] = x;
+                targetY[i] = y;
+                targetZ[i] = z;
+            }
+        }
+        
+        function initParticlesRandom() {
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                posX[i] = (Math.random() - 0.5) * width * 1.6;
+                posY[i] = (Math.random() - 0.5) * height * 1.6;
+                posZ[i] = (Math.random() - 0.5) * 800;
+                velX[i] = velY[i] = velZ[i] = 0;
+                // cool tones with gentle variety (cyan to soft purple)
+                let baseHue = 180 + Math.random() * 120;  // 180-300 -> teal to lavender
+                particleHue[i] = baseHue % 360;
+                phaseOffset[i] = Math.random() * Math.PI * 2;
+            }
+        }
+        
+        // ---- sample text positions (crisp typography) ----
+        function sampleTextAsParticles(phrase) {
+            if (!phrase.trim()) return [];
+            const w = Math.floor(width);
+            const h = Math.floor(height);
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = w;
+            offCanvas.height = h;
+            const offCtx = offCanvas.getContext('2d');
+            
+            const words = phrase.split(' ');
+            const lines = [];
+            let current = '';
+            const maxCharsPerLine = phrase.length > 28 ? 14 : 21;
+            for (let wd of words) {
+                if ((current + wd).length > maxCharsPerLine && current.length > 0) {
+                    lines.push(current.trim());
+                    current = wd + ' ';
+                } else {
+                    current += wd + ' ';
+                }
+            }
+            if (current.trim().length) lines.push(current.trim());
+            
+            let fontSize = Math.min(width * 0.62 / (maxCharsPerLine * 0.48), height * 0.4 / lines.length, 150);
+            if (phrase.length > 35) fontSize *= 0.75;
+            offCtx.fillStyle = '#ffffff';
+            offCtx.font = `700 ${fontSize}px "Segoe UI", "Inter", system-ui, sans-serif`;
+            offCtx.textAlign = 'center';
+            offCtx.textBaseline = 'middle';
+            
+            const lineHeight = fontSize * 1.1;
+            const startY = (h / 2) - ((lines.length - 1) * lineHeight) / 2;
+            for (let i = 0; i < lines.length; i++) {
+                offCtx.fillText(lines[i], w / 2, startY + i * lineHeight);
+            }
+            
+            const imageData = offCtx.getImageData(0, 0, w, h).data;
+            const points = [];
+            const step = phrase.length > 35 ? 2 : 1;
+            for (let y = 0; y < h; y += step) {
+                for (let x = 0; x < w; x += step) {
+                    const idx = (y * w + x) * 4 + 3;
+                    if (imageData[idx] > 130) {
+                        points.push(x - centerX + (Math.random() - 0.5) * 0.9, y - centerY + (Math.random() - 0.5) * 0.9);
+                    }
+                }
+            }
+            // shuffle for even distribution
+            for (let i = points.length / 2 - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const iA = i * 2, jA = j * 2;
+                let tmp = points[iA]; points[iA] = points[jA]; points[jA] = tmp;
+                tmp = points[iA+1]; points[iA+1] = points[jA+1]; points[jA+1] = tmp;
+            }
+            return points;
+        }
+        
+        let morphTimeout = null;
+        
+        function morphToWord(phrase, isTyping = false) {
+            if (!phrase.trim()) {
+                if (appMode !== 0) resetToSphere();
+                return;
+            }
+            const sampledPoints = sampleTextAsParticles(phrase);
+            const pointCount = sampledPoints.length / 2;
+            if (pointCount === 0) return;
+            
+            appMode = 1;
+            statusDiv.textContent = isTyping ? "~ shaping letters ~" : "text forming";
+            transcriptSpan.textContent = phrase.length > 42 ? phrase.slice(0, 42) + "…" : phrase;
+            hintDiv.style.opacity = '0.5';
+            
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const idx = (i % pointCount) * 2;
+                targetX[i] = sampledPoints[idx];
+                targetY[i] = sampledPoints[idx + 1];
+                targetZ[i] = 0;
+            }
+            rotAngle = 0;
+            if (morphTimeout) clearTimeout(morphTimeout);
+            if (!isTyping) {
+                morphTimeout = setTimeout(() => {
+                    appMode = 2;
+                    statusDiv.textContent = "✧ mouse repel active ✧";
+                    hintDiv.style.opacity = '0.9';
+                }, 2100);
+            } else {
+                if (morphTimeout) clearTimeout(morphTimeout);
+                morphTimeout = setTimeout(() => {
+                    if (appMode === 1) {
+                        appMode = 2;
+                        statusDiv.textContent = "hover mouse → soft repel";
+                        hintDiv.style.opacity = '0.9';
+                    }
+                }, 1700);
+            }
+        }
+        
+        function resetToSphere() {
+            appMode = 0;
+            generateSphereHomePositions();
+            statusDiv.textContent = "sphere mode • calm drift";
+            transcriptSpan.textContent = "✦ drift & type ✦";
+            hintDiv.style.opacity = '0.6';
+            hintDiv.style.color = '#b0caf5';
+            wordInput.value = '';
+            if (morphTimeout) clearTimeout(morphTimeout);
+            activeRipples = [];
+        }
+        
+        // ---------- physics update (slower + click ripples) ----------
+        function updateParticles(deltaTime) {
+            globalTime += TIME_STEP;
+            if (appMode === 0) {
+                rotAngle += ROTATION_SPEED;
+            }
+            const sphereJitter = appMode === 0 ? 1.2 : 0; // reduced jitter
+            
+            // update ripples life
+            for (let i=activeRipples.length-1; i>=0; i--) {
+                activeRipples[i].life -= deltaTime;
+                if (activeRipples[i].life <= 0) activeRipples.splice(i,1);
+            }
+            
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                let curTx = targetX[i];
+                let curTy = targetY[i];
+                let curTz = targetZ[i];
+                
+                const cosY = Math.cos(rotAngle);
+                const sinY = Math.sin(rotAngle);
+                let rotatedX = curTx * cosY - curTz * sinY;
+                let rotatedY = curTy;
+                let rotatedZ = curTx * sinY + curTz * cosY;
+                
+                if (appMode === 0) {
+                    rotatedX += Math.sin(globalTime * 5.5 + phaseOffset[i]) * sphereJitter;
+                    rotatedY += Math.cos(globalTime * 6.2 + phaseOffset[i] * 1.2) * sphereJitter;
+                    rotatedZ += Math.sin(globalTime * 4.8 + phaseOffset[i] * 1.5) * sphereJitter * 0.8;
+                }
+                
+                const spring = (appMode === 0) ? SPHERE_SPRING : TEXT_SPRING;
+                velX[i] += (rotatedX - posX[i]) * spring;
+                velY[i] += (rotatedY - posY[i]) * spring;
+                velZ[i] += (rotatedZ - posZ[i]) * spring;
+                
+                // mouse repulsion (softer)
+                if (appMode >= 1 && mouseX > -5000 && mouseX > 0 && mouseY > 0) {
+                    const camScale = FOV / (FOV + posZ[i] + CAM_Z_OFFSET);
+                    const screenX = posX[i] * camScale + centerX;
+                    const screenY = posY[i] * camScale + centerY;
+                    const dx = screenX - mouseX;
+                    const dy = screenY - mouseY;
+                    const distSq = dx*dx + dy*dy;
+                    const radiusSq = REPEL_RADIUS * REPEL_RADIUS;
+                    if (distSq < radiusSq && distSq > 1.5) {
+                        const dist = Math.sqrt(distSq);
+                        const strength = REPEL_FORCE * (1 - dist / REPEL_RADIUS) * 5.0;
+                        const normX = dx / dist;
+                        const normY = dy / dist;
+                        velX[i] += normX * strength;
+                        velY[i] += normY * strength;
+                    }
+                }
+                
+                // NOVELTY: click ripple force application
+                for (let r of activeRipples) {
+                    const camScale = FOV / (FOV + posZ[i] + CAM_Z_OFFSET);
+                    const screenX = posX[i] * camScale + centerX;
+                    const screenY = posY[i] * camScale + centerY;
+                    const dx = screenX - r.x;
+                    const dy = screenY - r.y;
+                    const distSq = dx*dx + dy*dy;
+                    const rippleRadius = r.radius * (1 - (1 - r.life)); // shrink with life
+                    if (distSq < rippleRadius*rippleRadius && distSq > 4) {
+                        const dist = Math.sqrt(distSq);
+                        const intensity = r.strength * (1 - dist/rippleRadius) * r.life;
+                        const normX = dx / dist;
+                        const normY = dy / dist;
+                        velX[i] += normX * intensity * 0.9;
+                        velY[i] += normY * intensity * 0.9;
+                    }
+                }
+                
+                velX[i] *= DAMPING;
+                velY[i] *= DAMPING;
+                velZ[i] *= DAMPING;
+                
+                posX[i] += velX[i];
+                posY[i] += velY[i];
+                posZ[i] += velZ[i];
+            }
+        }
+        
+        // ---------- render with gentle, modern palette ----------
+        function render() {
+            ctx.fillStyle = 'rgba(10, 12, 20, 0.2)';
+            ctx.fillRect(0, 0, width, height);
+            
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const zDepth = posZ[i] + CAM_Z_OFFSET;
+                if (zDepth < 8) continue;
+                const scale = FOV / zDepth;
+                const sx = posX[i] * scale + centerX;
+                const sy = posY[i] * scale + centerY;
+                if (sx < -60 || sx > width + 60 || sy < -60 || sy > height + 60) continue;
+                
+                const speed = Math.hypot(velX[i], velY[i], velZ[i]);
+                let alpha = Math.min(0.9, (0.2 + speed * 0.08) * (scale * 0.65));
+                let particleSize = (0.45 + speed * 0.09) * scale;
+                
+                let hueVal, sat, light;
+                if (appMode >= 1) {
+                    // text mode: soft cyan to electric blue
+                    const flicker = 0.88 + Math.sin(globalTime * 12 + i) * 0.08;
+                    hueVal = 185 + (speed * 12);
+                    if (hueVal > 230) hueVal = 230;
+                    sat = 75 + Math.sin(globalTime * 6 + i) * 8;
+                    light = 70 + flicker * 7;
+                    alpha = Math.min(0.96, alpha * 1.2);
+                    particleSize *= 0.92;
+                } else {
+                    // sphere mode: dreamy gradient (soft teal → lavender)
+                    let dynamicHue = (particleHue[i] + globalTime * 8) % 360;
+                    if (dynamicHue > 210 && dynamicHue < 300) dynamicHue = 190 + (dynamicHue % 50);
+                    hueVal = dynamicHue % 360;
+                    sat = 65 + Math.sin(globalTime * 4 + phaseOffset[i]) * 12;
+                    light = 62 + Math.sin(globalTime * 3.5 + i) * 8;
+                    alpha = Math.min(0.82, alpha * 0.92);
+                }
+                
+                ctx.beginPath();
+                ctx.arc(sx, sy, Math.max(1.0, particleSize), 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${hueVal}, ${sat}%, ${light}%, ${alpha})`;
+                ctx.fill();
+                // subtle core glow for moving particles
+                if (speed > 0.6 || (appMode >= 1 && alpha > 0.6)) {
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, particleSize * 0.45, 0, Math.PI * 2);
+                    ctx.fillStyle = `hsla(${hueVal}, 92%, 78%, 0.35)`;
+                    ctx.fill();
+                }
+            }
+            
+            // draw gentle cursor aura (text mode only)
+            if (appMode >= 1 && mouseX > -5000 && mouseX > 0 && mouseY > 0) {
+                const grad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, REPEL_RADIUS);
+                grad.addColorStop(0, 'rgba(90, 170, 255, 0.08)');
+                grad.addColorStop(0.7, 'rgba(60, 130, 210, 0.03)');
+                grad.addColorStop(1, 'rgba(20, 40, 70, 0)');
+                ctx.beginPath();
+                ctx.arc(mouseX, mouseY, REPEL_RADIUS, 0, Math.PI*2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+            }
+            
+            // visual feedback for active ripples (subtle rings)
+            for (let r of activeRipples) {
+                ctx.beginPath();
+                ctx.arc(r.x, r.y, 18 + (1 - r.life) * 35, 0, Math.PI*2);
+                ctx.strokeStyle = `rgba(120, 200, 255, ${0.25 * r.life})`;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+        }
+        
+        // ---------- event handlers ----------
+        function attachEvents() {
+            canvas.addEventListener('mousemove', (e) => {
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            });
+            canvas.addEventListener('mouseleave', () => {
+                mouseX = -10000;
+                mouseY = -10000;
+            });
+            
+            // NOVELTY: click creates ripple push
+            canvas.addEventListener('click', (e) => {
+                if (appMode >= 1) {
+                    addRipple(e.clientX, e.clientY, 1.0);
+                    // also add a few particles for extra spark
+                    statusDiv.textContent = "✦ ripple pulse ✦";
+                    setTimeout(() => { if(appMode===2) statusDiv.textContent = "✧ mouse repel active ✧"; }, 400);
+                } else {
+                    // in sphere mode: click adds tiny shimmer
+                    addRipple(e.clientX, e.clientY, 0.65);
+                }
+            });
+            
+            canvas.addEventListener('dblclick', () => {
+                resetToSphere();
+                for (let i=0;i<PARTICLE_COUNT;i++) {
+                    targetX[i] = homeX[i];
+                    targetY[i] = homeY[i];
+                    targetZ[i] = homeZ[i];
+                }
+                appMode = 0;
+                statusDiv.textContent = "sphere mode • calm drift";
+                transcriptSpan.textContent = "✦ drift & type ✦";
+                hintDiv.style.opacity = '0.6';
+                wordInput.value = '';
+                activeRipples = [];
+                if (morphTimeout) clearTimeout(morphTimeout);
+            });
+            
+            let typingTimer;
+            wordInput.addEventListener('input', (e) => {
+                const val = e.target.value.trim();
+                if (val === "") {
+                    resetToSphere();
+                    transcriptSpan.textContent = "✦ drift & type ✦";
+                    return;
+                }
+                transcriptSpan.textContent = val.length > 48 ? val.slice(0,45)+"…" : val;
+                if (typingTimer) clearTimeout(typingTimer);
+                morphToWord(val, true);
+                typingTimer = setTimeout(() => {
+                    if (appMode === 1 && wordInput.value.trim().length > 0) {
+                        appMode = 2;
+                        statusDiv.textContent = "✧ mouse repel active ✧";
+                        hintDiv.style.opacity = '0.9';
+                    }
+                }, 1500);
+            });
+        }
+        
+        // animation loop with delta time for smooth ripple decay
+        let lastTimestamp = 0;
+        function animate(now) {
+            let dt = Math.min(0.033, (now - lastTimestamp) / 1000);
+            lastTimestamp = now;
+            if (dt < 0.005) dt = 0.016;
+            updateParticles(dt);
+            render();
+            requestAnimationFrame(animate);
+        }
+        
+        function init() {
+            resizeCanvas();
+            generateSphereHomePositions();
+            initParticlesRandom();
+            attachEvents();
+            lastTimestamp = performance.now();
+            animate(lastTimestamp);
+        }
+        
+        window.addEventListener('resize', () => {
+            ctx.resetTransform();
+            resizeCanvas();
+            if (appMode === 0) generateSphereHomePositions();
+        });
+        
+        init();
+    })();
+</script>
+</body>
+</html>
+```
