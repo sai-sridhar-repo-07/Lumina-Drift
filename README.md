@@ -2,8 +2,8 @@
 
 **Particle Text Canvas** — a calm, interactive particle system where typed words gracefully morph from a glowing 3D sphere. Move your mouse to gently repel particles, click to create ripple pushes, and double-click to reset.
 
-![Lumina Drift Demo](https://via.placeholder.com/800x400?text=Lumina+Drift+Preview)
-*(Replace with actual screenshot or GIF)*
+<img width="1500" height="857" alt="Screenshot 2026-04-14 at 10 38 07 PM" src="https://github.com/user-attachments/assets/00318fa2-3907-4a88-8dce-0d196052a183" />
+
 
 ---
 
